@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"order-management-ms/src/main/config"
 	"time"
 
@@ -11,8 +12,10 @@ import (
 
 // InitRedis initializes a Redis client
 func InitRedis(cfg *config.Config, logger *zap.Logger) *redis.Client {
+
+	addr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
 	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Redis.Addr,
+		Addr:     addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})

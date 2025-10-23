@@ -1,10 +1,10 @@
-package mongodb
+package repositories
 
 import (
 	"context"
 	"time"
 
-	domain "order-management-ms/src/main/domain"
+	domain "order-management-ms/src/main/models/datastore"
 	errors "order-management-ms/src/main/pkg/customerrors"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -29,11 +29,11 @@ func NewOrderRepository(db *mongo.Database, collectionName string, logger *zap.L
 }
 
 // Create saves a new order to MongoDB
-func (r *OrderRepositoryMongoDB) Create(ctx context.Context, order *domain.Order) error {
+func (r *OrderRepositoryMongoDB) Create(ctx context.Context, order *domain.Order) (*domain.Order, error) {
 	result, err := r.collection.InsertOne(ctx, order)
 	if err != nil {
 		r.logger.Error("Failed to create order", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	// Update the order with the generated ID
@@ -41,24 +41,25 @@ func (r *OrderRepositoryMongoDB) Create(ctx context.Context, order *domain.Order
 		order.ID = oid
 	}
 
-	return nil
+	var createdOrder domain.Order
+	err = r.collection.FindOne(ctx, bson.M{"_id": result.InsertedID}).Decode(&createdOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	return &createdOrder, nil
 }
 
 // FindByID finds an order by its ID in MongoDB
-func (r *OrderRepositoryMongoDB) FindByID(ctx context.Context, id string) (*domain.Order, error) {
-	objID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		r.logger.Error("Invalid order ID format", zap.Error(err), zap.String("order_id", id))
-		return nil, errors.ErrOrderNotFound
-	}
+func (r *OrderRepositoryMongoDB) FindByID(ctx context.Context, orderID string) (*domain.Order, error) {
 
 	var order domain.Order
-	err = r.collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&order)
+	err := r.collection.FindOne(ctx, bson.M{"order_id": orderID}).Decode(&order)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, errors.ErrOrderNotFound
 		}
-		r.logger.Error("Failed to find order", zap.Error(err), zap.String("order_id", id))
+		r.logger.Error("Failed to find order", zap.Error(err), zap.String("order_id", orderID))
 		return nil, err
 	}
 
@@ -66,13 +67,7 @@ func (r *OrderRepositoryMongoDB) FindByID(ctx context.Context, id string) (*doma
 }
 
 // UpdateStatus updates the status of an order in MongoDB
-func (r *OrderRepositoryMongoDB) UpdateStatus(ctx context.Context, id string, status domain.OrderStatus) error {
-	objID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		r.logger.Error("Invalid order ID format", zap.Error(err), zap.String("order_id", id))
-		return errors.ErrOrderNotFound
-	}
-
+func (r *OrderRepositoryMongoDB) UpdateStatus(ctx context.Context, orderID string, status domain.OrderStatus) error {
 	update := bson.M{
 		"$set": bson.M{
 			"status":     status,
@@ -82,14 +77,14 @@ func (r *OrderRepositoryMongoDB) UpdateStatus(ctx context.Context, id string, st
 
 	result, err := r.collection.UpdateOne(
 		ctx,
-		bson.M{"_id": objID},
+		bson.M{"order_id": orderID},
 		update,
 	)
 
 	if err != nil {
 		r.logger.Error("Failed to update order status",
 			zap.Error(err),
-			zap.String("order_id", id),
+			zap.String("order_id", orderID),
 			zap.String("status", string(status)),
 		)
 		return err

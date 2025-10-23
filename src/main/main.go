@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"order-management-ms/src/main/config"
 	ordercontroller "order-management-ms/src/main/controllers"
@@ -19,6 +18,7 @@ import (
 	mongodbrepo "order-management-ms/src/main/repositories/mongodb"
 	orderservice "order-management-ms/src/main/services/orders"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
@@ -34,6 +34,9 @@ func main() {
 	if err != nil {
 		log.Fatal("Error creating logger: ", err)
 	}
+
+	// Initialize gin mode
+	initGinMode()
 
 	// Initialize MongoDB
 	mongoClient, err := mongodb.InitMongoDB(cfg, logger)
@@ -53,6 +56,9 @@ func main() {
 			logger.Error("Failed to close Redis connection", zap.Error(err))
 		}
 	}()
+
+	// Ensure Kafka topic exists
+	kafka.EnsureTopic(cfg.Kafka.Brokers, cfg.Kafka.Topic, logger)
 
 	// Initialize Kafka
 	kafkaProducer := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic, logger)
@@ -74,6 +80,18 @@ func main() {
 
 	// Run server
 	runServer(cfg, orderCtrl, logger)
+}
+
+// initGinMode  Initialize gin mode, this function is used to set the gin mode based on the environment variable GIN_MODE
+func initGinMode() {
+	switch os.Getenv("GIN_MODE") {
+	case gin.ReleaseMode:
+		gin.SetMode(gin.ReleaseMode)
+	case gin.TestMode:
+		gin.SetMode(gin.TestMode)
+	default:
+		gin.SetMode(gin.DebugMode)
+	}
 }
 
 func initLogger(cfg *config.Config) (*zap.Logger, error) {
@@ -142,7 +160,7 @@ func runServer(cfg *config.Config, orderCtrl *ordercontroller.OrderController, l
 	logger.Info("Shutting down server...")
 
 	// Controlled shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.GracefulShutdown)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {

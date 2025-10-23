@@ -11,9 +11,13 @@ var (
 	ErrInvalidOrderID     = &apiError{status: http.StatusBadRequest, code: "INVALID_ORDER_ID", message: "invalid order ID"}
 	ErrInvalidOrderStatus = &apiError{status: http.StatusBadRequest, code: "INVALID_ORDER_STATUS", message: "invalid order status"}
 	ErrInvalidOrder       = &apiError{status: http.StatusBadRequest, code: "INVALID_ORDER", message: "invalid order"}
-	ErrInvalidTransition  = &apiError{status: http.StatusBadRequest, code: "INVALID_TRANSITION", message: "invalid status transition"}
+	ErrInvalidCustomerID  = &apiError{status: http.StatusBadRequest, code: "INVALID_CUSTOMER_ID", message: "invalid customer ID"}
+	ErrInvalidItems       = &apiError{status: http.StatusBadRequest, code: "INVALID_ITEMS", message: "invalid items"}
 	ErrItemsIsRequired    = &apiError{status: http.StatusBadRequest, code: "ITEMS_REQUIRED", message: "items are required"}
 	ErrInvalidStatus      = &apiError{status: http.StatusBadRequest, code: "INVALID_STATUS", message: "invalid status"}
+	ErrInvalidTransition  = &apiError{status: http.StatusBadRequest, code: "INVALID_TRANSITION", message: "invalid status transition"}
+	ErrInvalidPage        = &apiError{status: http.StatusBadRequest, code: "INVALID_PAGE", message: "invalid page number"}
+	ErrInvalidLimit       = &apiError{status: http.StatusBadRequest, code: "INVALID_LIMIT", message: "invalid limit value"}
 	// 401 Unauthorized
 	ErrMissingAuthToken = &apiError{status: http.StatusUnauthorized, code: "MISSING_AUTH_TOKEN", message: "missing authorization token"}
 	ErrInvalidAuthToken = &apiError{status: http.StatusUnauthorized, code: "INVALID_AUTH_TOKEN", message: "invalid or expired authorization token"}
@@ -28,6 +32,7 @@ var (
 	ErrInternalServer = &apiError{status: http.StatusInternalServerError, code: "INTERNAL_SERVER_ERROR", message: "internal server error"}
 
 	ErrFailedToCreateOrder = &apiError{status: http.StatusInternalServerError, code: "FAILED_TO_CREATE_ORDER", message: "failed to create order"}
+	ErrFailedToUpdateOrder = &apiError{status: http.StatusInternalServerError, code: "FAILED_TO_UPDATE_ORDER", message: "failed to update order"}
 )
 
 // apiError implements the Error interface

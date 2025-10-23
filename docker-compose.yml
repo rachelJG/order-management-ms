@@ -6,19 +6,23 @@ services:
     ports:
       - "${SERVER_PORT}:${SERVER_PORT}"
     environment:
+      - GIN_MODE=${GIN_MODE}
       - ENVIRONMENT=${ENVIRONMENT}
       - SERVER_PORT=${SERVER_PORT}
       # MongoDB
-      - MONGODB_URI=${MONGODB_URI}
-      - MONGO_PORT=${MONGO_PORT}
+      - MONGO_PORT=27017  
+      - MONGO_HOST=mongodb
+      - MONGO_USERNAME=${MONGO_USERNAME}
+      - MONGO_PASSWORD=${MONGO_PASSWORD}
       # Redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - REDIS_DB=${REDIS_DB}
-      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PORT=6379
+      - REDIS_HOST=redis
       # Kafka
-      - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - KAFKA_BROKERS=kafka:29092
       - KAFKA_GROUP_ID=${KAFKA_GROUP_ID}
-      - KAFKA_ORDER_TOPIC=${KAFKA_ORDER_TOPIC}
+      - KAFKA_TOPIC=${KAFKA_TOPIC}
     env_file:
       - .env
     depends_on:
@@ -31,21 +35,29 @@ services:
     networks:
       - order-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:${PORT}/health"]
+      test: ["CMD", "wget", "--spider", "http://localhost:${SERVER_PORT}/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
   mongodb:
+    container_name: mongodb
     image: mongo:latest
+    hostname: "${MONGO_HOST:-mongodb}"
     ports:
-      - "${MONGODB_PORT:-27019}:27017"
+      - "${MONGO_PORT:-27019}:27017"
     volumes:
       - mongodb_data:/data/db
     environment:
-      - MONGODB_DATABASE=${MONGODB_DATABASE:-orderdb}
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-admin}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-1qaz2wsx}
+      - MONGO_DATABASE=${MONGO_DATABASE:-orderdb}
+      - MONGO_USERNAME=${MONGO_USERNAME:-admin}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:-1qaz2wsx}
+    command: ["--quiet", "--logpath=/dev/null"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - order-network
     healthcheck:
@@ -57,7 +69,7 @@ services:
   redis:
     image: redis:alpine
     container_name: redis
-    hostname: redis
+    hostname: "${REDIS_HOST:-redis}"
     ports:
       - "${REDIS_PORT:-6380}:6379"
     volumes:
@@ -70,32 +82,33 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
-      timeout: 5s
       retries: 5
 
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.4.0
     hostname: kafka
     container_name: kafka
     ports:
       - "9092:9092"
-      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: true
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-      KAFKA_DELETE_TOPIC_ENABLE: 'true'
-      KAFKA_LOG_RETENTION_HOURS: 24
-      KAFKA_LOG_RETENTION_BYTES: 1073741824
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=WARN,kafka.producer.async.DefaultEventHandler=WARN,state.change.logger=WARN"
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
       interval: 30s
       timeout: 10s
-      retries: 5
       start_period: 40s
     depends_on:
       zookeeper:
@@ -117,51 +130,6 @@ services:
       retries: 10
     ports:
       - "2181:2181"
-    networks:
-      - order-network
-
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: order-management-app
-    restart: always
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    ports:
-      - "8081:8080"
-    environment:
-      # Server
-      - ENVIRONMENT=${ENVIRONMENT}
-      - SERVER_PORT=8080
-      - SERVER_READ_TIMEOUT=30s
-      - SERVER_WRITE_TIMEOUT=30s
-      - GRACEFUL_SHUTDOWN=10s
-      
-      # MongoDB
-      - MONGODB_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-orderdb}?authSource=admin
-      - MONGODB_DATABASE=${MONGODB_DATABASE:-order_management}
-      - MONGODB_COLLECTION=${MONGODB_COLLECTION:-orders}
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
-      
-      # Redis
-      - REDIS_ADDR=localhost:6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - REDIS_DB=${REDIS_DB:-0}
-      
-      # Kafka
-      - KAFKA_BROKERS=${KAFKA_BROKERS:-kafka:9092}
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-order_events}
-      - KAFKA_GROUP_ID=${KAFKA_GROUP_ID}
-      
-      # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-info}
     networks:
       - order-network
 

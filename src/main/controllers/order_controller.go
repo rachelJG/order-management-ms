@@ -2,9 +2,11 @@ package controllers
 
 import (
 	"net/http"
-	"order-management-ms/src/main/domain"
-	"order-management-ms/src/main/models/dto/requests"
+	models "order-management-ms/src/main/models/api"
+	domain "order-management-ms/src/main/models/datastore"
 	errors "order-management-ms/src/main/pkg/customerrors"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -16,25 +18,28 @@ import (
 // @Tags orders
 // @Accept json
 // @Produce json
-// @Param input body CreateOrderRequest true "Order data"
+// @Param input body dtos.CreateOrderRequest true "Order data"
 // @Success 201 {object} domain.Order
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /api/v1/orders [post]
 func (c *OrderController) CreateOrder(ctx *gin.Context) {
-	var req requests.CreateOrderRequest
+	var req *models.CreateOrderRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		c.logger.Error("Invalid request body", zap.Error(err))
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": errors.ErrInvalidRequest.Error()})
 		return
 	}
 
-	order := &domain.Order{
-		CustomerID: req.CustomerID,
-		Items:      req.Items,
+	// Validate order
+	if err := c.validateOrder(req); err != nil {
+		c.logger.Error("Invalid order", zap.Error(err), zap.String("	", req.CustomerID))
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
-	if err := c.service.CreateOrder(ctx.Request.Context(), order); err != nil {
+	order, err := c.service.CreateOrder(ctx.Request.Context(), req.ToDomain())
+	if err != nil {
 		c.logger.Error("Failed to create order", zap.Error(err))
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": errors.ErrFailedToCreateOrder.Error()})
 		return
@@ -55,15 +60,15 @@ func (c *OrderController) CreateOrder(ctx *gin.Context) {
 // @Failure 500 {object} map[string]string
 // @Router /api/v1/orders/{id} [get]
 func (c *OrderController) GetOrder(ctx *gin.Context) {
-	id := ctx.Param("id")
-	if id == "" {
+	orderID := ctx.Param("id")
+	if orderID == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Order ID is required"})
 		return
 	}
 
-	order, err := c.service.GetOrder(ctx.Request.Context(), id)
+	order, err := c.service.GetOrder(ctx.Request.Context(), orderID)
 	if err != nil {
-		c.logger.Error("Failed to get order", zap.Error(err), zap.String("order_id", id))
+		c.logger.Error("Failed to get order", zap.Error(err), zap.String("order_id", orderID))
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": errors.ErrOrderNotFound.Error()})
 		return
 	}
@@ -92,8 +97,19 @@ func (c *OrderController) ListOrders(ctx *gin.Context) {
 	if customerID != "" {
 		filters["customer_id"] = customerID
 	}
-	page := ctx.GetInt("page")
-	limit := ctx.GetInt("limit")
+
+	page, limit, err := validatePaginationParams(ctx)
+	if err != nil {
+		c.logger.Error("Invalid pagination parameters", zap.Error(err))
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.logger.Debug("Listing orders",
+		zap.Any("filters", filters),
+		zap.Int("page", page),
+		zap.Int("limit", limit),
+	)
 
 	orders, err := c.service.ListOrders(ctx.Request.Context(), filters, page, limit)
 	if err != nil {
@@ -129,7 +145,7 @@ func (c *OrderController) ListOrders(ctx *gin.Context) {
 // @Produce json
 // @Param id path string true "Order ID"
 // @Param input body UpdateOrderStatusRequest true "Status update data"
-// @Success 200 {object} domain.Order
+// @Success 200 {object} models.UpdateOrderStatusResponse
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -141,14 +157,23 @@ func (c *OrderController) UpdateOrderStatus(ctx *gin.Context) {
 		return
 	}
 
-	var req requests.UpdateOrderStatusRequest
+	var req *models.UpdateOrderStatusRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		c.logger.Error("Invalid request body", zap.Error(err))
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	err := c.service.UpdateOrderStatus(ctx.Request.Context(), id, req.Status)
+	// Validate status
+	if !domain.IsValidStatus(domain.OrderStatus(strings.ToUpper(req.Status))) {
+		c.logger.Error("Invalid status value",
+			zap.String("status", req.Status),
+		)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": errors.ErrInvalidStatus.Error()})
+		return
+	}
+
+	err := c.service.UpdateOrderStatus(ctx.Request.Context(), id, domain.OrderStatus(req.Status))
 	if err != nil {
 		c.logger.Error("Failed to update order status",
 			zap.Error(err),
@@ -157,13 +182,50 @@ func (c *OrderController) UpdateOrderStatus(ctx *gin.Context) {
 		)
 
 		if err == errors.ErrOrderNotFound {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			ctx.JSON(http.StatusNotFound, gin.H{"error": errors.ErrOrderNotFound.Error()})
 			return
 		}
 
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update order status"})
+		if err == errors.ErrInvalidTransition {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": errors.ErrInvalidTransition.Error()})
+			return
+		}
+
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": errors.ErrFailedToUpdateOrder.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Order status updated successfully"})
+}
+
+// validateOrder validates the order
+func (c *OrderController) validateOrder(order *models.CreateOrderRequest) error {
+	if order == nil {
+		return errors.ErrInvalidOrder
+	}
+
+	if len(order.Items) == 0 {
+		return errors.ErrItemsIsRequired
+	}
+
+	return nil
+}
+
+func validatePaginationParams(ctx *gin.Context) (int, int, error) {
+	// Parse pagination parameters with defaults
+	pageStr := ctx.DefaultQuery("page", "1")
+	limitStr := ctx.DefaultQuery("limit", "10")
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+
+		return 0, 0, errors.ErrInvalidPage
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 || limit > 100 {
+		return 0, 0, errors.ErrInvalidLimit
+	}
+
+	return page, limit, nil
 }

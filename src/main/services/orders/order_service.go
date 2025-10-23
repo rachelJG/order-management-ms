@@ -2,7 +2,10 @@ package orders
 
 import (
 	"context"
-	"order-management-ms/src/main/domain"
+	"encoding/json"
+	models "order-management-ms/src/main/models/api"
+	domain "order-management-ms/src/main/models/datastore"
+	kafkaDto "order-management-ms/src/main/models/kafka"
 	errors "order-management-ms/src/main/pkg/customerrors"
 	"time"
 
@@ -10,113 +13,146 @@ import (
 )
 
 // CreateOrder creates a new order
-func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) error {
-
-	// Validate order
-	if err := s.validateOrder(order); err != nil {
-		s.logger.Error("Invalid order", zap.Error(err), zap.String("order_id", order.ID.Hex()))
-		return errors.ErrInvalidOrder
-	}
-
+func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) (*models.OrderResponse, error) {
 	// Set default values
 	order.Status = domain.StatusNew
 	order.CreatedAt = time.Now()
 	order.UpdatedAt = time.Now()
 
 	// Save to database
-	if err := s.repo.Create(ctx, order); err != nil {
+	newOrder, err := s.repo.Create(ctx, order)
+	if err != nil {
 		s.logger.Error("Failed to create order", zap.Error(err), zap.String("order_id", order.ID.Hex()))
-		return err
+		return nil, err
 	}
 
-	return nil
+	return models.NewOrderResponse(newOrder), nil
 }
 
-// GetOrder retrieves an order by ID
-func (s *OrderService) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
-	order, err := s.repo.FindByID(ctx, id)
+// GetOrder retrieves an order by ID with caching
+func (s *OrderService) GetOrder(ctx context.Context, orderID string) (*domain.Order, error) {
+	// Try to get from cache first
+	cachedOrder, err := s.getFromCache(ctx, orderID)
+	if err == nil && cachedOrder != nil {
+		return cachedOrder, nil
+	}
+
+	// If not in cache, get from database
+	order, err := s.repo.FindByID(ctx, orderID)
 	if err != nil {
-		s.logger.Error("Failed to get order", zap.Error(err), zap.String("order_id", id))
+		s.logger.Error("Failed to find order",
+			zap.Error(err),
+			zap.String("order_id", orderID),
+		)
 		return nil, errors.ErrOrderNotFound
 	}
+
+	// Save to cache for future requests
+	if err := s.SaveOrderInCache(ctx, order); err != nil {
+		s.logger.Warn("Failed to save order to cache",
+			zap.Error(err),
+			zap.String("order_id", orderID),
+		)
+	}
+
 	return order, nil
 }
 
+// ListOrders retrieves a list of orders with optional filters
 func (s *OrderService) ListOrders(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.Order, error) {
-	// Validate status if provided
-	if status, ok := filters["status"].(string); ok {
-		if !isValidStatus(domain.OrderStatus(status)) {
-			return nil, errors.ErrInvalidStatus
-		}
-	}
-
-	// Set default pagination if not provided
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 10
-	}
-
 	return s.repo.List(ctx, filters, page, limit)
 }
 
-func isValidStatus(status domain.OrderStatus) bool {
-	switch status {
-	case domain.StatusNew, domain.StatusInProgress, domain.StatusDelivered, domain.StatusCancelled:
-		return true
-	default:
-		return false
-	}
-}
-
 // UpdateOrderStatus updates the status of an order
-func (s *OrderService) UpdateOrderStatus(ctx context.Context, id string, newStatus domain.OrderStatus) error {
+func (s *OrderService) UpdateOrderStatus(ctx context.Context, orderID string, newStatus domain.OrderStatus) error {
 	// Get current order
-	order, err := s.repo.FindByID(ctx, id)
+	order, err := s.repo.FindByID(ctx, orderID)
 	if err != nil {
-		s.logger.Error("Failed to find order", zap.Error(err), zap.String("order_id", id))
+		s.logger.Error("Failed to find order",
+			zap.Error(err),
+			zap.String("order_id", orderID),
+		)
 		return errors.ErrOrderNotFound
 	}
 
 	// Validate status transition
 	if !isValidStatusTransition(order.Status, newStatus) {
 		s.logger.Warn("Invalid status transition",
-			zap.String("order_id", id),
+			zap.String("order_id", orderID),
 			zap.String("current_status", string(order.Status)),
 			zap.String("new_status", string(newStatus)),
 		)
 		return errors.ErrInvalidTransition
 	}
 
+	// Save old status for event
+	oldStatus := order.Status
+
 	// Update status
 	order.Status = newStatus
 	order.UpdatedAt = time.Now()
 
 	// Save to database
-	if err := s.repo.UpdateStatus(ctx, id, newStatus); err != nil {
+	if err := s.repo.UpdateStatus(ctx, orderID, newStatus); err != nil {
 		s.logger.Error("Failed to update order status",
 			zap.Error(err),
-			zap.String("order_id", id),
-			zap.String("status", string(newStatus)),
+			zap.String("order_id", orderID),
+			zap.String("new_status", string(newStatus)),
 		)
-		return err
+		return errors.ErrInternalServer
+	}
+
+	event := kafkaDto.NewOrderStatusChangedEvent(orderID, oldStatus, newStatus)
+
+	if err := s.eventPublisher.PublishOrderStatusChanged(ctx, event); err != nil {
+		s.logger.Error("Failed to publish order status changed event",
+			zap.Error(err),
+			zap.String("order_id", orderID),
+			zap.Any("event", event),
+		)
+	}
+
+	// Invalidate cache for this order
+	cacheKey := "order:" + orderID
+	if err := s.cache.Delete(ctx, cacheKey); err != nil {
+		s.logger.Error("Failed to invalidate cache for order",
+			zap.Error(err),
+			zap.String("order_id", orderID),
+		)
 	}
 
 	return nil
 }
 
-// validateOrder validates the order
-func (s *OrderService) validateOrder(order *domain.Order) error {
+// SaveOrderInCache saves an order in the cache with a TTL of 60 seconds
+func (s *OrderService) SaveOrderInCache(ctx context.Context, order *domain.Order) error {
 	if order == nil {
-		return errors.ErrInvalidOrder
+		return nil
 	}
 
-	if len(order.Items) == 0 {
-		return errors.ErrItemsIsRequired
+	cacheKey := "order:" + order.OrderID
+	orderJSON, err := json.Marshal(order)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	return s.cache.Set(ctx, cacheKey, string(orderJSON), 60*time.Second)
+}
+
+// getFromCache attempts to retrieve an order from the cache
+func (s *OrderService) getFromCache(ctx context.Context, orderID string) (*domain.Order, error) {
+	cacheKey := "order:" + orderID
+	val, err := s.cache.Get(ctx, cacheKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var order domain.Order
+	if err := json.Unmarshal([]byte(val), &order); err != nil {
+		return nil, err
+	}
+
+	return &order, nil
 }
 
 // isValidStatusTransition checks if the status transition is valid

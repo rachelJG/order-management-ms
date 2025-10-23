@@ -94,24 +94,22 @@ curl -X PUT http://localhost:8080/orders/uuid-123/state \
 
 | Area             | Decision                  | Reason                                           |
 | ---------------- | ------------------------- | ------------------------------------------------ |
-| **Language**     | Go                        | Simplicity, concurrency, microservice-friendly   |
+| **Language**     | Go 1.23.0                       | Simplicity, concurrency, microservice-friendly   |
 | **Framework**    | Gin                       | Lightweight and idiomatic HTTP routers           |
 | **Database**     | MongoDB                   | Flexible NoSQL document model for dynamic orders |
 | **Cache**        | Redis                     | Improves read performance and reduces DB load    |
-| **Messaging**    | Kafka                     | Enables asynchronous and decoupled communication |
+| **Messaging**    | Kafka (segmentio/kafka-go)| Enables asynchronous and decoupled communication |
 | **Architecture** | Modular                   | Separation of concerns and testability           |
 | **Config**       | `.env` + `config` package | Centralized environment configuration            |
-| **Logging**      | logrus                    | Structured, leveled logging                      |
+| **Logging**      | zap                       | Structured, leveled logging                      |
 | **Testing**      | testify                   | Unit testing and mocking support                 |
+
 
 ---
 
 ## 🧩 Future Improvements
 
 * Add authentication and authorization
-* Include metrics (Prometheus) and tracing (OpenTelemetry)
-* Add pagination and sorting for query endpoints
-
 ---
 
 ## 🧑‍💻 Author

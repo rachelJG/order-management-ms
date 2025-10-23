@@ -24,15 +24,19 @@ type Server struct {
 }
 
 type MongoDB struct {
-	URI        string `envconfig:"MONGODB_URI" required:"true"`
-	Database   string `envconfig:"MONGODB_DATABASE" default:"order_management"`
-	Collection string `envconfig:"MONGODB_COLLECTION" default:"orders"`
+	Database   string `envconfig:"MONGO_DATABASE" default:"order_management"`
+	Collection string `envconfig:"MONGO_COLLECTION" default:"orders"`
+	Username   string `envconfig:"MONGO_USERNAME" default:"admin"`
+	Password   string `envconfig:"MONGO_PASSWORD" default:"1qaz2wsx"`
+	Port       string `envconfig:"MONGO_PORT" default:"27019"`
+	Host       string `envconfig:"MONGO_HOST" default:"localhost"`
 }
 
 type Redis struct {
-	Addr     string `envconfig:"REDIS_ADDR" default:"localhost:6379"`
 	Password string `envconfig:"REDIS_PASSWORD"`
 	DB       int    `envconfig:"REDIS_DB" default:"0"`
+	Host     string `envconfig:"REDIS_HOST" default:"localhost"`
+	Port     string `envconfig:"REDIS_PORT" default:"6379"`
 }
 
 type Kafka struct {
