@@ -35,25 +35,29 @@ This microservice follows clean architecture principles and includes:
 
 * Go 1.23+
 * Docker & Docker Compose
+* File .env configured with the environment variables. (Example: .env.example)
 
 ### 2. Clone the repository
 
 ```bash
-git clone https://github.com/your-org/order-management-ms.git
+git clone https://github.com/rachelJG/order-management-ms.git
 cd order-management-ms
 ```
+Copy the environment variables file:
 
-### 3. Start dependencies (MongoDB, Redis, Kafka)
+```bash
+cp .env.example .env
+```
+
+Then open .env and adjust the variables as needed (ports, credentials, topic names, etc).
+
+### 3. Start the services
 
 ```bash
 docker-compose up -d
 ```
 
-### 4. Run the service
-
-```bash
-go run ./cmd/api
-```
+This will start all the containers defined in the docker-compose.yml file (for example: API, database, Kafka, Zookeeper, etc).
 
 The service will start at `http://localhost:8080`
 
@@ -110,6 +114,12 @@ curl -X PUT http://localhost:8080/orders/uuid-123/state \
 ## 🧩 Future Improvements
 
 * Add authentication and authorization
+* Add metrics and tracing
+* Configure CI/CD pipeline
+* Add Validation layer
+* Add swagger documentation
+* Improve error messages
+
 ---
 
 ## 🧑‍💻 Author
