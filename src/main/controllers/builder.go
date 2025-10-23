@@ -7,11 +7,11 @@ import (
 )
 
 type OrderController struct {
-	service *orders.OrderService
+	service orders.Service
 	logger  *zap.Logger
 }
 
-func NewOrderController(service *orders.OrderService, logger *zap.Logger) *OrderController {
+func NewOrderController(service orders.Service, logger *zap.Logger) *OrderController {
 	return &OrderController{
 		service: service,
 		logger:  logger,

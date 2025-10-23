@@ -39,6 +39,18 @@ func NewProducer(brokers []string, topic string, logger *zap.Logger) *Producer {
 	}
 }
 
+func NewProducerWithWriter(writer Writer, topic string, logger *zap.Logger) *Producer {
+	return &Producer{
+		writer: writer,
+		logger: logger,
+		topic:  topic,
+	}
+}
+
+func (p *Producer) GetTopic() string {
+	return p.topic
+}
+
 // PublishOrderStatusChanged implements the EventPublisher interface
 func (p *Producer) PublishOrderStatusChanged(ctx context.Context, event kafkaDto.OrderStatusChangedEvent) error {
 	// Convert event to JSON

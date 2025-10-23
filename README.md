@@ -51,15 +51,32 @@ cp .env.example .env
 
 Then open .env and adjust the variables as needed (ports, credentials, topic names, etc).
 
-### 3. Start the services
+### 3. Build and start the services
 
 ```bash
-docker-compose up -d
+docker-compose up --build -d
 ```
-
-This will start all the containers defined in the docker-compose.yml file (for example: API, database, Kafka, Zookeeper, etc).
+This will:
+- Build all Docker images based on your local Dockerfile
+- Start all services defined in docker-compose.yml (for example: API, database, Kafka, Zookeeper, etc.)
 
 The service will start at `http://localhost:8080`
+
+### 4. Stop the services
+
+```bash
+docker-compose down
+```
+
+### 5. Check running containers
+```bash
+docker ps
+```
+
+### 6. Check logs
+```bash
+docker logs <container_id>
+```
 
 ---
 
@@ -68,28 +85,41 @@ The service will start at `http://localhost:8080`
 ### Create a new order
 
 ```bash
-curl -X POST http://localhost:8080/orders \
+curl -X POST http://localhost:8080/api/v1/orders \
   -H "Content-Type: application/json" \
   -d '{
-        "client_id": "client-123",
-        "items": [
-          {"sku": "P001", "name": "Package A", "quantity": 2, "price": 50.0}
-        ]
-      }'
+    "customer_id": "1233",
+    "items": [
+      {
+        "sku": "JNS-CLS-32",
+        "quantity": 1
+      }
+    ]
+  }'
+
+```
+
+### Get order by id
+
+```bash
+curl -X GET http://localhost:8080/api/v1/orders/ORD-e7825df7
 ```
 
 ### Query orders by client and status
 
 ```bash
-curl "http://localhost:8080/orders?client_id=client-123&state=created"
+curl -X GET "http://localhost:8080/api/v1/orders?status=NEW&page=1&limit=10"
 ```
 
 ### Update order state
 
 ```bash
-curl -X PUT http://localhost:8080/orders/uuid-123/state \
+curl -X PATCH http://localhost:8080/api/v1/orders/ORD-12b72b69/status \
   -H "Content-Type: application/json" \
-  -d '{"new_state": "in_transit"}'
+  -d '{
+    "status": "IN_PROGRESS"
+  }'
+
 ```
 
 ---
@@ -108,8 +138,56 @@ curl -X PUT http://localhost:8080/orders/uuid-123/state \
 | **Logging**      | zap                       | Structured, leveled logging                      |
 | **Testing**      | testify                   | Unit testing and mocking support                 |
 
+### Project Structure
 
----
+The project follows a clean and modular architecture to maintain separation of concerns and scalability.
+
+```bash
+src/
+└── main/
+    ├── config/
+    ├── controllers/
+    ├── models/
+    ├── pkg/
+    ├── repositories/
+    ├── services/
+    └── main.go
+``` 
+
+# config/
+
+Contains configuration files and initialization logic for external dependencies such as environment variables, database connections, Kafka, etc.
+
+# controllers/
+
+You define the HTTP handlers that receive incoming requests, validate input data, and call the corresponding service layer functions.
+They represent the presentation layer of the application.
+
+# models/
+
+Includes the data models and structures used across the project, such as database entities and API request/response models.
+
+# pkg/
+
+Holds reusable helper packages and utilities (e.g., logging, Kafka producer/consumer, middlewares).
+This folder can be imported by other layers when needed.
+
+# repositories/
+
+Implements the data access logic.
+Each repository interacts directly with the database or external storage using libraries like GORM or MongoDB drivers.
+
+# services/
+
+Contains the business logic of the application.
+Services act as intermediaries between controllers and repositories, encapsulating use case–specific operations.
+
+# main.go
+
+The entry point of the application.
+It loads the configuration, initializes dependencies, sets up routes, and starts the HTTP server.
+
+
 
 ## 🧩 Future Improvements
 
@@ -119,6 +197,7 @@ curl -X PUT http://localhost:8080/orders/uuid-123/state \
 * Add Validation layer
 * Add swagger documentation
 * Improve error messages
+* Add unit tests
 
 ---
 

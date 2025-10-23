@@ -12,6 +12,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// Service defines the interface for order operations
+type Service interface {
+	CreateOrder(ctx context.Context, order *domain.Order) (*models.OrderResponse, error)
+	GetOrder(ctx context.Context, orderID string) (*models.OrderResponse, error)
+	ListOrders(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*models.OrderResponse, error)
+	UpdateOrderStatus(ctx context.Context, orderID string, newStatus domain.OrderStatus) error
+}
+
 // CreateOrder creates a new order
 func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) (*models.OrderResponse, error) {
 	// Set default values
@@ -30,7 +38,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) (*m
 }
 
 // GetOrder retrieves an order by ID with caching
-func (s *OrderService) GetOrder(ctx context.Context, orderID string) (*domain.Order, error) {
+func (s *OrderService) GetOrder(ctx context.Context, orderID string) (*models.OrderResponse, error) {
 	// Try to get from cache first
 	cachedOrder, err := s.getFromCache(ctx, orderID)
 	if err == nil && cachedOrder != nil {
@@ -47,20 +55,23 @@ func (s *OrderService) GetOrder(ctx context.Context, orderID string) (*domain.Or
 		return nil, errors.ErrOrderNotFound
 	}
 
-	// Save to cache for future requests
-	if err := s.SaveOrderInCache(ctx, order); err != nil {
-		s.logger.Warn("Failed to save order to cache",
-			zap.Error(err),
-			zap.String("order_id", orderID),
-		)
-	}
-
-	return order, nil
+	return models.NewOrderResponse(order), nil
 }
 
 // ListOrders retrieves a list of orders with optional filters
-func (s *OrderService) ListOrders(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.Order, error) {
-	return s.repo.List(ctx, filters, page, limit)
+func (s *OrderService) ListOrders(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*models.OrderResponse, error) {
+	orders, err := s.repo.List(ctx, filters, page, limit)
+	if err != nil {
+		s.logger.Error("Failed to list orders", zap.Error(err))
+		return nil, err
+	}
+
+	var orderResponses []*models.OrderResponse
+	for _, order := range orders {
+		orderResponses = append(orderResponses, models.NewOrderResponse(order))
+	}
+
+	return orderResponses, nil
 }
 
 // UpdateOrderStatus updates the status of an order
@@ -140,7 +151,7 @@ func (s *OrderService) SaveOrderInCache(ctx context.Context, order *domain.Order
 }
 
 // getFromCache attempts to retrieve an order from the cache
-func (s *OrderService) getFromCache(ctx context.Context, orderID string) (*domain.Order, error) {
+func (s *OrderService) getFromCache(ctx context.Context, orderID string) (*models.OrderResponse, error) {
 	cacheKey := "order:" + orderID
 	val, err := s.cache.Get(ctx, cacheKey)
 	if err != nil {
@@ -152,7 +163,7 @@ func (s *OrderService) getFromCache(ctx context.Context, orderID string) (*domai
 		return nil, err
 	}
 
-	return &order, nil
+	return models.NewOrderResponse(&order), nil
 }
 
 // isValidStatusTransition checks if the status transition is valid
