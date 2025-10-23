@@ -21,10 +21,10 @@ The service leverages **MongoDB**, **Redis**, and **Kafka** to implement persist
 
 This microservice follows clean architecture principles and includes:
 
-* REST API for communication (`chi` or `gin`)
+* REST API for communication (`gin`)
 * MongoDB repository for order persistence
 * Redis cache layer for optimized reads
-* Kafka producer for event publishing (`OrderCreated`, `OrderStateChanged`)
+* Kafka producer for event publishing (In topic "order_events" when order state changes)
 * Configurable environment variables
 
 ---
@@ -33,7 +33,7 @@ This microservice follows clean architecture principles and includes:
 
 ### 1. Prerequisites
 
-* Go 1.22+
+* Go 1.23+
 * Docker & Docker Compose
 
 ### 2. Clone the repository
@@ -99,7 +99,7 @@ curl -X PUT http://localhost:8080/orders/uuid-123/state \
 | **Database**     | MongoDB                   | Flexible NoSQL document model for dynamic orders |
 | **Cache**        | Redis                     | Improves read performance and reduces DB load    |
 | **Messaging**    | Kafka                     | Enables asynchronous and decoupled communication |
-| **Architecture** | Clean Architecture        | Separation of concerns and testability           |
+| **Architecture** | Modular                   | Separation of concerns and testability           |
 | **Config**       | `.env` + `config` package | Centralized environment configuration            |
 | **Logging**      | logrus                    | Structured, leveled logging                      |
 | **Testing**      | testify                   | Unit testing and mocking support                 |

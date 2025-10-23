@@ -1,0 +1,1 @@
+go build -ldflags='-w -s' -a -o order-management-ms ./src/main
