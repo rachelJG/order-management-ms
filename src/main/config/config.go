@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	Server   Server
-	MongoDB  MongoDB
-	Redis    Redis
-	Kafka    Kafka
-	LogLevel string `envconfig:"LOG_LEVEL" default:"info"`
+	Server      Server
+	MongoDB     MongoDB
+	Redis       Redis
+	Kafka       Kafka
+	Environment string `envconfig:"ENVIRONMENT" default:"production"`
+	LogLevel    string `envconfig:"LOG_LEVEL" default:"info"`
 }
 
 type Server struct {

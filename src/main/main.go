@@ -15,7 +15,7 @@ import (
 	"order-management-ms/src/main/pkg/api"
 	"order-management-ms/src/main/pkg/cache"
 	"order-management-ms/src/main/pkg/kafka"
-	mongodb "order-management-ms/src/main/pkg/mongodb"
+	"order-management-ms/src/main/pkg/mongodb"
 	mongodbrepo "order-management-ms/src/main/repositories/mongodb"
 	orderservice "order-management-ms/src/main/services/orders"
 
@@ -29,23 +29,30 @@ func main() {
 		log.Fatal("Error loading config: ", err)
 	}
 
-	// Configure logger
-	logger, err := zap.NewProduction()
+	// Configure logger based on environment and log level
+	logger, err := initLogger(cfg)
 	if err != nil {
 		log.Fatal("Error creating logger: ", err)
 	}
-	defer logger.Sync()
 
 	// Initialize MongoDB
 	mongoClient, err := mongodb.InitMongoDB(cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize MongoDB", zap.Error(err))
 	}
-	defer mongoClient.Disconnect(context.Background())
+	defer func() {
+		if err := mongoClient.Disconnect(context.Background()); err != nil {
+			logger.Error("Failed to disconnect from MongoDB", zap.Error(err))
+		}
+	}()
 
 	// Initialize Redis
 	redisClient := cache.InitRedis(cfg, logger)
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			logger.Error("Failed to close Redis connection", zap.Error(err))
+		}
+	}()
 
 	// Initialize Kafka
 	kafkaProducer := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic, logger)
@@ -67,6 +74,44 @@ func main() {
 
 	// Run server
 	runServer(cfg, orderCtrl, logger)
+}
+
+func initLogger(cfg *config.Config) (*zap.Logger, error) {
+	var logConfig zap.Config
+
+	// Use development config in non-production environments
+	if cfg.Environment == "development" {
+		logConfig = zap.NewDevelopmentConfig()
+	} else {
+		logConfig = zap.NewProductionConfig()
+	}
+
+	// Set log level
+	switch cfg.LogLevel {
+	case "debug":
+		logConfig.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	case "info":
+		logConfig.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+	case "warn":
+		logConfig.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
+	case "error":
+		logConfig.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
+	default:
+		logConfig.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+	}
+
+	// Build the logger
+	logger, err := logConfig.Build()
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("Logger initialized",
+		zap.String("environment", cfg.Environment),
+		zap.String("logLevel", cfg.LogLevel),
+	)
+
+	return logger, nil
 }
 
 func runServer(cfg *config.Config, orderCtrl *ordercontroller.OrderController, logger *zap.Logger) {
