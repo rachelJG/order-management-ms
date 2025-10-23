@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
 )
 
@@ -101,28 +102,34 @@ func (r *OrderRepositoryMongoDB) UpdateStatus(ctx context.Context, id string, st
 	return nil
 }
 
-// FindAll finds all orders, filtered by status and customer ID
-func (r *OrderRepositoryMongoDB) FindAll(ctx context.Context, filters map[string]interface{}) ([]domain.Order, error) {
-	filter := bson.M{}
+// List finds all orders, filtered by status and customer ID
+func (r *OrderRepositoryMongoDB) List(ctx context.Context, filter map[string]interface{}, page, limit int) ([]*domain.Order, error) {
+	// Implement pagination
+	skip := (page - 1) * limit
+	options := options.Find().
+		SetSkip(int64(skip)).
+		SetLimit(int64(limit)).
+		SetSort(bson.D{{Key: "created_at", Value: -1}}) // Sort by creation date descending
 
-	// Add status filter if provided
-	if status, ok := filters["status"].(string); ok {
-		filter["status"] = status
+	// Build the filter
+	mongoFilter := bson.M{}
+	if status, ok := filter["status"].(string); ok {
+		mongoFilter["status"] = status
+	}
+	if customerID, ok := filter["customer_id"].(string); ok {
+		mongoFilter["customer_id"] = customerID
 	}
 
-	// Add customer ID filter if provided
-	if customerID, ok := filters["customer_id"].(string); ok {
-		filter["customer_id"] = customerID
-	}
-
-	cursor, err := r.collection.Find(ctx, filter)
+	cursor, err := r.collection.Find(ctx, mongoFilter, options)
 	if err != nil {
+		r.logger.Error("Failed to list orders", zap.Error(err))
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
-	var orders []domain.Order
+	var orders []*domain.Order
 	if err := cursor.All(ctx, &orders); err != nil {
+		r.logger.Error("Failed to decode orders", zap.Error(err))
 		return nil, err
 	}
 

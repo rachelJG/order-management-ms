@@ -92,12 +92,16 @@ func (c *OrderController) ListOrders(ctx *gin.Context) {
 	if customerID != "" {
 		filters["customer_id"] = customerID
 	}
+	page := ctx.GetInt("page")
+	limit := ctx.GetInt("limit")
 
-	orders, err := c.service.ListOrders(ctx.Request.Context(), filters)
+	orders, err := c.service.ListOrders(ctx.Request.Context(), filters, page, limit)
 	if err != nil {
 		c.logger.Error("Failed to list orders",
 			zap.Error(err),
 			zap.Any("filters", filters),
+			zap.Int("page", page),
+			zap.Int("limit", limit),
 		)
 
 		if err == errors.ErrInvalidStatus {

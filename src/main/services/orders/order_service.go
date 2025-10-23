@@ -42,7 +42,7 @@ func (s *OrderService) GetOrder(ctx context.Context, id string) (*domain.Order, 
 	return order, nil
 }
 
-func (s *OrderService) ListOrders(ctx context.Context, filters map[string]interface{}) ([]domain.Order, error) {
+func (s *OrderService) ListOrders(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.Order, error) {
 	// Validate status if provided
 	if status, ok := filters["status"].(string); ok {
 		if !isValidStatus(domain.OrderStatus(status)) {
@@ -50,11 +50,15 @@ func (s *OrderService) ListOrders(ctx context.Context, filters map[string]interf
 		}
 	}
 
-	orders, err := s.repo.FindAll(ctx, filters)
-	if err != nil {
-		return nil, err
+	// Set default pagination if not provided
+	if page < 1 {
+		page = 1
 	}
-	return orders, nil
+	if limit < 1 {
+		limit = 10
+	}
+
+	return s.repo.List(ctx, filters, page, limit)
 }
 
 func isValidStatus(status domain.OrderStatus) bool {

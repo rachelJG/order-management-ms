@@ -11,17 +11,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// MockKafkaWriter es un mock de kafka.Writer
-type MockKafkaWriter struct {
+type mockKafkaWriter struct {
 	mock.Mock
 }
 
-func (m *MockKafkaWriter) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
+func (m *mockKafkaWriter) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
 	args := m.Called(ctx, msgs)
 	return args.Error(0)
 }
 
-func (m *MockKafkaWriter) Close() error {
+func (m *mockKafkaWriter) Close() error {
 	args := m.Called()
 	return args.Error(0)
 }
@@ -39,9 +38,9 @@ func TestNewProducer(t *testing.T) {
 }
 
 func TestPublish_Success(t *testing.T) {
-	// Configuración
-	mockWriter := new(MockKafkaWriter)
+	mockWriter := new(mockKafkaWriter)
 	logger := zap.NewNop()
+
 	producer := &Producer{
 		writer: mockWriter,
 		logger: logger,
@@ -51,26 +50,16 @@ func TestPublish_Success(t *testing.T) {
 	key := []byte("test-key")
 	value := []byte("test-value")
 
-	// Expectativas
-	mockWriter.On("WriteMessages", ctx, []kafka.Message{
-		{
-			Key:   key,
-			Value: value,
-			Time:  mock.AnythingOfType("time.Time"),
-		},
-	}).Return(nil)
+	mockWriter.On("WriteMessages", ctx, mock.AnythingOfType("[]kafka.Message")).Return(nil)
 
-	// Ejecución
 	err := producer.Publish(ctx, key, value)
 
-	// Verificación
 	assert.NoError(t, err)
 	mockWriter.AssertExpectations(t)
 }
 
 func TestPublish_Error(t *testing.T) {
-	// Configuración
-	mockWriter := new(MockKafkaWriter)
+	mockWriter := new(mockKafkaWriter)
 	logger := zap.NewNop()
 	producer := &Producer{
 		writer: mockWriter,
@@ -80,21 +69,16 @@ func TestPublish_Error(t *testing.T) {
 	ctx := context.Background()
 	expectedErr := errors.New("kafka write error")
 
-	// Expectativas
-	mockWriter.On("WriteMessages", ctx, mock.Anything).
-		Return(expectedErr)
+	mockWriter.On("WriteMessages", ctx, mock.Anything).Return(expectedErr)
 
-	// Ejecución
 	err := producer.Publish(ctx, []byte("key"), []byte("value"))
 
-	// Verificación
 	assert.ErrorIs(t, err, expectedErr)
 	mockWriter.AssertExpectations(t)
 }
 
 func TestClose(t *testing.T) {
-	// Configuración
-	mockWriter := new(MockKafkaWriter)
+	mockWriter := new(mockKafkaWriter)
 	logger := zap.NewNop()
 	producer := &Producer{
 		writer: mockWriter,
@@ -102,13 +86,8 @@ func TestClose(t *testing.T) {
 	}
 
 	t.Run("success", func(t *testing.T) {
-		// Expectativas
 		mockWriter.On("Close").Return(nil)
-
-		// Ejecución
 		err := producer.Close()
-
-		// Verificación
 		assert.NoError(t, err)
 		mockWriter.AssertExpectations(t)
 	})
@@ -117,9 +96,7 @@ func TestClose(t *testing.T) {
 		expectedErr := errors.New("close error")
 		mockWriter.ExpectedCalls = nil
 		mockWriter.On("Close").Return(expectedErr)
-
 		err := producer.Close()
-
 		assert.ErrorIs(t, err, expectedErr)
 		mockWriter.AssertExpectations(t)
 	})

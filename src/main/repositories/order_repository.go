@@ -17,9 +17,6 @@ type OrderRepository interface {
 	// UpdateStatus updates the status of an order
 	UpdateStatus(ctx context.Context, id string, status domain.OrderStatus) error
 
-	// FindAll finds all orders, filtered by status and customer ID
-	FindAll(ctx context.Context, filter map[string]interface{}) ([]*domain.Order, error)
-
 	// List returns a list of orders with pagination and filtering
 	List(ctx context.Context, filter map[string]interface{}, page, limit int) ([]*domain.Order, error)
 }

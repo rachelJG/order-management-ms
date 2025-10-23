@@ -1,31 +1,27 @@
-// pkg/kafka/producer.go
 package kafka
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/segmentio/kafka-go"
 	"go.uber.org/zap"
 )
 
+type Writer interface {
+	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
+	Close() error
+}
+
 type Producer struct {
-	writer *kafka.Writer
+	writer Writer
 	logger *zap.Logger
 }
 
 func NewProducer(brokers []string, topic string, logger *zap.Logger) *Producer {
 	w := &kafka.Writer{
-		Addr:         kafka.TCP(brokers...),
-		Topic:        topic,
-		Balancer:     &kafka.LeastBytes{},
-		RequiredAcks: kafka.RequireOne, // Esperar confirmación del líder
-		Async:        false,            // Envío síncrono para asegurar entrega
-		Logger:       kafka.LoggerFunc(logger.Info),
-		ErrorLogger:  kafka.LoggerFunc(logger.Error),
+		Addr:  kafka.TCP(brokers...),
+		Topic: topic,
 	}
-
 	return &Producer{
 		writer: w,
 		logger: logger,
@@ -33,17 +29,12 @@ func NewProducer(brokers []string, topic string, logger *zap.Logger) *Producer {
 }
 
 func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
-	msg := kafka.Message{
-		Key:   key,
-		Value: value,
-		Time:  time.Now(),
-	}
-
+	msg := kafka.Message{Key: key, Value: value}
 	err := p.writer.WriteMessages(ctx, msg)
 	if err != nil {
-		return fmt.Errorf("error publishing message: %w", err)
+		p.logger.Error("failed to publish message", zap.Error(err))
+		return err
 	}
-
 	return nil
 }
 
